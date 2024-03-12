@@ -66,7 +66,7 @@ class BigEarthNetDataset(Dataset):
         raster_band_b4 = band_b4_ds.GetRasterBand(1)
         band_data_b4 = raster_band_b4.ReadAsArray()
         
-        image = np.stack((band_data_b2, band_data_b3, band_data_b4), axis=0).astype(np.float16)
+        image = np.stack((band_data_b2, band_data_b3, band_data_b4), axis=0).astype(np.float32)
         
         
         if self.transform:
