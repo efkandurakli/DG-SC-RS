@@ -1,8 +1,10 @@
 import os
 import time
-import warnings
+import random
+import numpy as np
 import torch
 import torchvision
+import datetime
 from torch.utils.data.dataloader import default_collate
 from torchvision.transforms.functional import InterpolationMode
 
@@ -12,6 +14,15 @@ from torch import nn
 from dataset import BigEarthNetDataset
 
 
+SEED = 25081992
+
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+
+
 def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -19,13 +30,11 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, arg
     metric_logger.add_meter("img/s", utils.SmoothedValue(window_size=10, fmt="{value}"))
     
     header = f"Epoch: [{epoch}]"
-    
     for i, (image, target, domain) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
         start_time = time.time()
         image, target = image.to(device), target.to(device)
         output = model(image)
         loss = criterion(output, target)
-
         optimizer.zero_grad()
 
         loss.backward()
@@ -42,6 +51,7 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, arg
         metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
         metric_logger.meters["img/s"].update(batch_size / (time.time() - start_time))
 
+
 def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix=""):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -56,30 +66,12 @@ def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix="
             loss = criterion(output, target)
 
             acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
-            # FIXME need to take into account that the datasets
-            # could have been padded in distributed setup
             batch_size = image.shape[0]
             metric_logger.update(loss=loss.item())
             metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
             metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
             num_processed_samples += batch_size
     # gather the stats from all processes
-
-    num_processed_samples = utils.reduce_across_processes(num_processed_samples)
-    if (
-        hasattr(data_loader.dataset, "__len__")
-        and len(data_loader.dataset) != num_processed_samples
-        and torch.distributed.get_rank() == 0
-    ):
-        # See FIXME above
-        warnings.warn(
-            f"It looks like the dataset has {len(data_loader.dataset)} samples, but {num_processed_samples} "
-            "samples were used for the validation, which might bias the results. "
-            "Try adjusting the batch size and / or the world size. "
-            "Setting the world size to 1 is always a safe bet."
-        )
-
-    metric_logger.synchronize_between_processes()
 
     print(f"{header} Acc@1 {metric_logger.acc1.global_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}")
     return metric_logger.acc1.global_avg
@@ -126,7 +118,7 @@ def main(args):
         torch.backends.cudnn.benchmark = True
         
     train_dir = os.path.join(args.data_path, "train")
-    val_dir = os.path.join(args.data_path, "val")
+    val_dir = os.path.join(args.data_path, "test")
     
     tr_dataset, val_dataset, train_sampler, val_sampler = load_data(train_dir, val_dir, args)
     
@@ -188,7 +180,7 @@ def main(args):
         main_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step_size, gamma=args.lr_gamma)
     elif args.lr_scheduler == "cosineannealinglr":
         main_lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=args.epochs - args.lr_warmup_epochs, eta_min=args.lr_min
+            optimizer, T_max=args.max_epochs - args.lr_warmup_epochs, eta_min=args.lr_min
         )
     elif args.lr_scheduler == "exponentiallr":
         main_lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_gamma)
@@ -217,20 +209,56 @@ def main(args):
     else:
         lr_scheduler = main_lr_scheduler
     
-    
+    best_acc = 0.0
+    epochs_without_improvement = 0
+
+    if args.resume:
+        checkpoint = torch.load(args.resume, map_location="cpu")
+        model.load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+        args.start_epoch = checkpoint["epoch"] + 1
+        epochs_without_improvement = checkpoint["epochs_without_improvement"]
+
     print("Start training")
     start_time = time.time()
-    for epoch in range(args.start_epoch, args.epochs):
+    for epoch in range(args.start_epoch, args.max_epochs):
         train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args)
         lr_scheduler.step()
-        evaluate(model, criterion, data_loader_test, device=device)
+        acc = evaluate(model, criterion, data_loader_test, device=device)
+
+        checkpoint = {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "lr_scheduler": lr_scheduler.state_dict(),
+            "epoch": epoch,
+            "args": args,
+            "epochs_without_improvement": epochs_without_improvement
+        }
+        
+        torch.save(checkpoint, os.path.join(args.output_dir, "checkpoint.pth"))
+
+        if acc > best_acc:
+            torch.save(checkpoint, os.path.join(args.output_dir, "best_model.pth"))
+            best_acc = acc
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+
+        if epochs_without_improvement >= args.patience:
+            print("Early Stopping")
+            break
+    
+    total_time = time.time() - start_time
+    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+    print(f"Training time {total_time_str}")
 
 def get_args_parser(add_help=True):
     import argparse
 
     parser = argparse.ArgumentParser(description="BigearthNet Classification Training", add_help=add_help)
     
-    parser.add_argument("--output-dir", default=".", type=str, help="path to save outputs")
+    parser.add_argument("--output-dir", default="./output", type=str, help="path to save outputs")
     
     parser.add_argument(
         "--use-deterministic-algorithms", action="store_true", help="Forces the use of deterministic algorithms only."
@@ -255,7 +283,7 @@ def get_args_parser(add_help=True):
     parser.add_argument(
         "-b", "--batch-size", default=32, type=int, help="images per gpu, the total batch size is $NGPU x batch_size"
     )
-    parser.add_argument("--epochs", default=90, type=int, metavar="N", help="number of total epochs to run")
+    parser.add_argument("--max-epochs", default=90, type=int, metavar="N", help="number of total epochs to run")
     parser.add_argument("--start-epoch", default=0, type=int, metavar="N", help="start epoch")
     parser.add_argument(
         "-j", "--workers", default=4, type=int, metavar="N", help="number of data loading workers (default: 16)"
@@ -294,6 +322,9 @@ def get_args_parser(add_help=True):
     parser.add_argument("--lr-step-size", default=30, type=int, help="decrease lr every step-size epochs")
     parser.add_argument("--lr-gamma", default=0.1, type=float, help="decrease lr by a factor of lr-gamma")
     parser.add_argument("--lr-warmup-epochs", default=0, type=int, help="the number of epochs to warmup (default: 0)")
+    parser.add_argument("--patience", default=10, type=int, help='number of checks with no improvement after which training will be stopped')
+    parser.add_argument("--resume", default="", type=str, help="path of checkpoint")
+
 
     return parser
 
