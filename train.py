@@ -77,27 +77,39 @@ def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix="
     return metric_logger.acc1.global_avg
     
 
-def load_data(traindir, valdir, args):
+def load_data(args):
     print("Loading data")
+    
+    interpolation = InterpolationMode(args.interpolation)
+    
+    val_dir = os.path.join(args.data_path, args.val_folder)
+
     val_resize_size, val_crop_size, train_crop_size = (
         args.val_resize_size,
         args.val_crop_size,
         args.train_crop_size,
     )
-    
-    interpolation = InterpolationMode(args.interpolation)
-    
-    tr_dataset = BigEarthNetDataset(traindir, transform=presets.ClassificationPresetTrain(
-                        crop_size=train_crop_size,
-                        interpolation=interpolation,
-                    ))
 
-    val_dataset = BigEarthNetDataset(valdir, transform=presets.ClassificationPresetEval(
-                        crop_size=train_crop_size,
+    val_dataset = BigEarthNetDataset(val_dir, transform=presets.ClassificationPresetEval(
+                        crop_size=val_crop_size,
                         resize_size=val_resize_size,
                         interpolation=interpolation,
                     ))
-    
+
+    tr_datasets = []
+
+    for train_folder in args.train_folders:
+        train_dir = os.path.join(args.data_path, train_folder)
+        tr_datasets.append(
+            BigEarthNetDataset(train_dir, transform=presets.ClassificationPresetTrain(
+                crop_size=train_crop_size,
+                interpolation=interpolation,
+            ))
+        )
+
+    tr_dataset = torch.utils.data.ConcatDataset(tr_datasets)
+    tr_dataset.classes = val_dataset.classes
+
     train_sampler = torch.utils.data.RandomSampler(tr_dataset)
     val_sampler = torch.utils.data.SequentialSampler(val_dataset)
     
@@ -117,10 +129,8 @@ def main(args):
     else:
         torch.backends.cudnn.benchmark = True
         
-    train_dir = os.path.join(args.data_path, "train")
-    val_dir = os.path.join(args.data_path, "val")
     
-    tr_dataset, val_dataset, train_sampler, val_sampler = load_data(train_dir, val_dir, args)
+    tr_dataset, val_dataset, train_sampler, val_sampler = load_data(args)
     
     num_classes = len(tr_dataset.classes)
     
@@ -324,7 +334,8 @@ def get_args_parser(add_help=True):
     parser.add_argument("--lr-warmup-epochs", default=0, type=int, help="the number of epochs to warmup (default: 0)")
     parser.add_argument("--patience", default=10, type=int, help='number of checks with no improvement after which training will be stopped')
     parser.add_argument("--resume", default="", type=str, help="path of checkpoint")
-
+    parser.add_argument("--train-folders", default=["train"], nargs='+', help="List of train folders")
+    parser.add_argument("--val-folder", default="val", help="the validation folder name")
 
     return parser
 

@@ -37,9 +37,7 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, arg
         output, domain_logits = model(image)
         classification_loss = criterion(output, target)
         domain_loss = criterion(domain_logits, domains)
-        
         loss = classification_loss + domain_loss
-        
         optimizer.zero_grad()
 
         loss.backward()
@@ -51,7 +49,10 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, arg
 
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
         batch_size = image.shape[0]
-        metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
+        metric_logger.update(classification_loss=classification_loss.item(), 
+                             domain_loss=domain_loss.item(), 
+                             total_loss=loss.item(), 
+                             lr=optimizer.param_groups[0]["lr"])
         metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
         metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
         metric_logger.meters["img/s"].update(batch_size / (time.time() - start_time))
@@ -82,28 +83,39 @@ def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix="
     return metric_logger.acc1.global_avg
     
 
-def load_data(traindir, valdir, args):
+def load_data(args):
     print("Loading data")
+    
+    interpolation = InterpolationMode(args.interpolation)
+    
+    val_dir = os.path.join(args.data_path, args.val_folder)
+
     val_resize_size, val_crop_size, train_crop_size = (
         args.val_resize_size,
         args.val_crop_size,
         args.train_crop_size,
     )
-    
-    interpolation = InterpolationMode(args.interpolation)
-    
-    tr_dataset = BigEarthNetDataset(traindir, transform=presets.ClassificationPresetTrain(
-                        crop_size=train_crop_size,
-                        interpolation=interpolation,
-                        hflip_prob=0
-                    ))
 
-    val_dataset = BigEarthNetDataset(valdir, transform=presets.ClassificationPresetEval(
-                        crop_size=train_crop_size,
+    val_dataset = BigEarthNetDataset(val_dir, transform=presets.ClassificationPresetEval(
+                        crop_size=val_crop_size,
                         resize_size=val_resize_size,
                         interpolation=interpolation,
                     ))
-    
+
+    tr_datasets = []
+
+    for train_folder in args.train_folders:
+        train_dir = os.path.join(args.data_path, train_folder)
+        tr_datasets.append(
+            BigEarthNetDataset(train_dir, transform=presets.ClassificationPresetTrain(
+                crop_size=train_crop_size,
+                interpolation=interpolation,
+            ))
+        )
+
+    tr_dataset = torch.utils.data.ConcatDataset(tr_datasets)
+    tr_dataset.classes = val_dataset.classes
+
     train_sampler = torch.utils.data.RandomSampler(tr_dataset)
     val_sampler = torch.utils.data.SequentialSampler(val_dataset)
     
@@ -123,10 +135,8 @@ def main(args):
     else:
         torch.backends.cudnn.benchmark = True
         
-    train_dir = os.path.join(args.data_path, "train")
-    val_dir = os.path.join(args.data_path, "test")
     
-    tr_dataset, val_dataset, train_sampler, val_sampler = load_data(train_dir, val_dir, args)
+    tr_dataset, val_dataset, train_sampler, val_sampler = load_data(args)
     
     num_classes = len(tr_dataset.classes)
     
@@ -143,10 +153,11 @@ def main(args):
     data_loader_test = torch.utils.data.DataLoader(
         val_dataset, batch_size=1, sampler=val_sampler, num_workers=args.workers, pin_memory=True
     )
+    
     print("Creating model")
     model = DGModel(args.model, weights=args.weights, num_classes=num_classes)
     model.to(device)
-
+    
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     
     custom_keys_weight_decay = []
@@ -253,11 +264,10 @@ def main(args):
         if epochs_without_improvement >= args.patience:
             print("Early Stopping")
             break
-        
+    
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f"Training time {total_time_str}")
-
 
 def get_args_parser(add_help=True):
     import argparse
@@ -330,7 +340,8 @@ def get_args_parser(add_help=True):
     parser.add_argument("--lr-warmup-epochs", default=0, type=int, help="the number of epochs to warmup (default: 0)")
     parser.add_argument("--patience", default=10, type=int, help='number of checks with no improvement after which training will be stopped')
     parser.add_argument("--resume", default="", type=str, help="path of checkpoint")
-
+    parser.add_argument("--train-folders", default=["train"], nargs='+', help="List of train folders")
+    parser.add_argument("--val-folder", default="val", help="the validation folder name")
 
     return parser
 

@@ -66,7 +66,7 @@ def main(args):
     print(args)
 
         
-    test_dir = os.path.join(args.data_path, "test")
+    test_dir = os.path.join(args.data_path, args.test_folder)
     
     test_dataset, test_sampler = load_data(test_dir, args)
     
@@ -119,6 +119,8 @@ def get_args_parser(add_help=True):
     )
 
     parser.add_argument("--model-path", default="lower_bound/best_model.pth", type=str, help="model path")
+
+    parser.add_argument("--test-folder", default="test", help="the test folder name")
 
 
 
