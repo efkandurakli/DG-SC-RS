@@ -20,8 +20,8 @@ CLASSES = [
 DOMAINS = [
     "Finland",
     "Portugal",
-    "Ireland",
     "Serbia",
+    "Ireland",
     "Lithuania",
     "Austria",
     "Belgium"

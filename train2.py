@@ -12,6 +12,7 @@ import utils
 import presets
 from torch import nn
 from dataset import BigEarthNetDataset
+from dg_model import DGModel
 
 
 SEED = 25081992
@@ -30,11 +31,15 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, arg
     metric_logger.add_meter("img/s", utils.SmoothedValue(window_size=10, fmt="{value}"))
     
     header = f"Epoch: [{epoch}]"
-    for i, (image, target, domain) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
+    for i, (image, target, domains) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
         start_time = time.time()
-        image, target = image.to(device), target.to(device)
-        output = model(image)
-        loss = criterion(output, target)
+        image, target, domains = image.to(device), target.to(device), domains.to(device)
+        output, domain_logits = model(image)
+        classification_loss = criterion(output, target)
+        domain_loss = criterion(domain_logits, domains)
+        
+        loss = classification_loss + domain_loss
+        
         optimizer.zero_grad()
 
         loss.backward()
@@ -90,6 +95,7 @@ def load_data(traindir, valdir, args):
     tr_dataset = BigEarthNetDataset(traindir, transform=presets.ClassificationPresetTrain(
                         crop_size=train_crop_size,
                         interpolation=interpolation,
+                        hflip_prob=0
                     ))
 
     val_dataset = BigEarthNetDataset(valdir, transform=presets.ClassificationPresetEval(
@@ -118,7 +124,7 @@ def main(args):
         torch.backends.cudnn.benchmark = True
         
     train_dir = os.path.join(args.data_path, "train")
-    val_dir = os.path.join(args.data_path, "val")
+    val_dir = os.path.join(args.data_path, "test")
     
     tr_dataset, val_dataset, train_sampler, val_sampler = load_data(train_dir, val_dir, args)
     
@@ -137,11 +143,10 @@ def main(args):
     data_loader_test = torch.utils.data.DataLoader(
         val_dataset, batch_size=1, sampler=val_sampler, num_workers=args.workers, pin_memory=True
     )
-    
     print("Creating model")
-    model = torchvision.models.get_model(args.model, weights=args.weights, num_classes=num_classes)
+    model = DGModel(args.model, weights=args.weights, num_classes=num_classes)
     model.to(device)
-    
+
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     
     custom_keys_weight_decay = []
@@ -248,10 +253,11 @@ def main(args):
         if epochs_without_improvement >= args.patience:
             print("Early Stopping")
             break
-    
+        
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f"Training time {total_time_str}")
+
 
 def get_args_parser(add_help=True):
     import argparse
