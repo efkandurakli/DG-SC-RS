@@ -72,27 +72,7 @@ class BigEarthNetDataset(Dataset):
         return image, label, domain
 
 
-def load_data(
-        data_path,
-        train_folders,
-        interpolation,
-        val_folder,
-        val_resize_size,
-        val_crop_size,
-        train_crop_size,
-        band_groups
-    ):
-    print("Loading data")
-    
-    interpolation = InterpolationMode(interpolation)
-    
-    val_dir = os.path.join(data_path, val_folder)
-
-    val_resize_size, val_crop_size, train_crop_size = (
-        val_resize_size,
-        val_crop_size,
-        train_crop_size,
-    )
+def get_bands_mean_std(band_groups):
 
     bands = []
     mean = []
@@ -143,6 +123,27 @@ def load_data(
             BAND_STATS["S2"]["std"]["B11"],
             BAND_STATS["S2"]["std"]["B12"],
         ])
+    return bands, mean, std
+
+def load_train_val_data(
+        data_path,
+        train_folders,
+        interpolation,
+        val_folder,
+        val_resize_size,
+        val_crop_size,
+        train_crop_size,
+        band_groups
+    ):
+    print("Loading data")
+    
+    interpolation = InterpolationMode(interpolation)
+    
+    val_dir = os.path.join(data_path, val_folder)
+
+
+    bands, mean, std = get_bands_mean_std(band_groups)
+
 
     val_dataset = BigEarthNetDataset(val_dir,  bands=bands, transform=presets.ClassificationPresetEval(
                         crop_size=val_crop_size,
@@ -173,3 +174,30 @@ def load_data(
     
     
     return tr_dataset, val_dataset, train_sampler, val_sampler
+
+def load_test_data(
+        testdir,
+        test_resize_size,
+        test_crop_size,
+        interpolation,
+        band_groups
+    ):
+    print("Loading data")
+    
+    interpolation = InterpolationMode(interpolation)
+
+    bands, mean, std = get_bands_mean_std(band_groups)
+    
+
+    test_dataset = BigEarthNetDataset(testdir, bands=bands, transform=presets.ClassificationPresetEval(
+                        crop_size=test_crop_size,
+                        resize_size=test_resize_size,
+                        interpolation=interpolation,
+                        mean=mean,
+                        std=std
+                    ))
+    
+    test_sampler = torch.utils.data.SequentialSampler(test_dataset)
+    
+    
+    return test_dataset, test_sampler

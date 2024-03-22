@@ -4,14 +4,11 @@ import torch
 import torchvision
 import datetime
 from torch.utils.data.dataloader import default_collate
-from torchvision.transforms.functional import InterpolationMode
 
 import utils
-import presets
-from torch import nn
-from dataset import BigEarthNetDataset
+from dataset import load_test_data
 from dg_model import DGModel
-
+from resnet import resnet18
 
 
 
@@ -40,26 +37,6 @@ def evaluate(model, data_loader, device, print_freq=100, log_suffix=""):
     return metric_logger.acc1.global_avg
     
 
-def load_data(testdir, args):
-    print("Loading data")
-    test_resize_size, test_crop_size = (
-        args.test_resize_size,
-        args.test_crop_size,
-    )
-    
-    interpolation = InterpolationMode(args.interpolation)
-    
-
-    test_dataset = BigEarthNetDataset(testdir, transform=presets.ClassificationPresetEval(
-                        crop_size=test_crop_size,
-                        resize_size=test_resize_size,
-                        interpolation=interpolation,
-                    ))
-    
-    test_sampler = torch.utils.data.SequentialSampler(test_dataset)
-    
-    
-    return test_dataset, test_sampler
 
 def main(args):
     
@@ -69,9 +46,16 @@ def main(args):
         
     test_dir = os.path.join(args.data_path, args.test_folder)
     
-    test_dataset, test_sampler = load_data(test_dir, args)
+    test_dataset, test_sampler = load_test_data(
+        test_dir,
+        args.test_resize_size,
+        args.test_crop_size,
+        args.interpolation,
+        args.band_groups
+    )
     
     num_classes = len(test_dataset.classes)
+    num_channels = len(test_dataset.bands)
     
     collate_fn = default_collate
     
@@ -86,9 +70,9 @@ def main(args):
 
     print("Creating model")
     if args.dg:
-        model = DGModel(args.model, weights=None, num_classes=num_classes)
+        model = DGModel(args.model, weights=args.weights, num_classes=num_classes, num_channels=num_channels)
     else:
-        model = torchvision.models.get_model(args.model, weights=None, num_classes=num_classes)
+        model = resnet18(weights=None, num_classes=num_classes, num_channels=num_channels)
     model.to(device)
     
 
@@ -129,7 +113,8 @@ def get_args_parser(add_help=True):
     parser.add_argument(
         "--dg", action="store_true", help="domain generalization model"
     )
-    
+
+    parser.add_argument("--band-groups", default=["rgb"], nargs='+', help="List of train folders")
 
 
 

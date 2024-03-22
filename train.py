@@ -8,7 +8,7 @@ import utils
 from torch import nn
 from resnet import resnet18
 from constants import *
-from dataset import load_data
+from dataset import load_train_val_data
 
 
 def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args):
@@ -79,7 +79,7 @@ def main(args):
         torch.backends.cudnn.benchmark = True
         
     
-    tr_dataset, val_dataset, train_sampler, val_sampler = load_data(
+    tr_dataset, val_dataset, train_sampler, val_sampler = load_train_val_data(
         args.data_path,
         args.train_folders,
         args.interpolation,
@@ -92,7 +92,7 @@ def main(args):
     
     num_classes = len(tr_dataset.classes)
     num_channels = len(val_dataset.bands)
-    
+
     collate_fn = default_collate
     
     data_loader = torch.utils.data.DataLoader(
