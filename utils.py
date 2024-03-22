@@ -5,6 +5,8 @@ import time
 from collections import defaultdict, deque
 from typing import List, Optional, Tuple
 import torch
+import random
+import numpy as np
 
 
 def mkdir(path):
@@ -239,3 +241,16 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].flatten().sum(dtype=torch.float32)
             res.append(correct_k * (100.0 / batch_size))
         return res
+    
+def set_seed(seed = 42) -> None:
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
+
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    print(f"Random seed set as {seed}")

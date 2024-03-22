@@ -50,10 +50,17 @@ class BigEarthNetDataset(Dataset):
         images_folder = "_".join(self.img_labels[idx].split("_")[:-2])
         image_files = os.listdir(os.path.join(self.root, "images", images_folder))
         
+        b1_file = [img_file for img_file in image_files if img_file.split("_")[5][:-4] == "B01"][0]
         b2_file = [img_file for img_file in image_files if img_file.split("_")[5][:-4] == "B02"][0]
         b3_file = [img_file for img_file in image_files if img_file.split("_")[5][:-4] == "B03"][0]
         b4_file = [img_file for img_file in image_files if img_file.split("_")[5][:-4] == "B04"][0]
-        
+
+        band_b1_ds = gdal.Open(os.path.join(self.root, "images", images_folder, b1_file),  gdal.GA_ReadOnly)
+        raster_band_b1 = band_b1_ds.GetRasterBand(1)
+        band_data_b1 = raster_band_b1.ReadAsArray()
+
+        band_data_b1 = np.resize(band_data_b1, (120,120))
+     
         band_b2_ds = gdal.Open(os.path.join(self.root, "images", images_folder, b2_file),  gdal.GA_ReadOnly)
         raster_band_b2 = band_b2_ds.GetRasterBand(1)
         band_data_b2 = raster_band_b2.ReadAsArray()
@@ -66,7 +73,7 @@ class BigEarthNetDataset(Dataset):
         raster_band_b4 = band_b4_ds.GetRasterBand(1)
         band_data_b4 = raster_band_b4.ReadAsArray()
         
-        image = np.stack((band_data_b2, band_data_b3, band_data_b4), axis=0).astype(np.float32)
+        image = np.stack((band_data_b1, band_data_b2, band_data_b3, band_data_b4), axis=0).astype(np.float32)
         
         
         if self.transform:

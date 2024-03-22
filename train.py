@@ -3,7 +3,6 @@ import time
 import random
 import numpy as np
 import torch
-import torchvision
 import datetime
 from torch.utils.data.dataloader import default_collate
 from torchvision.transforms.functional import InterpolationMode
@@ -12,15 +11,7 @@ import utils
 import presets
 from torch import nn
 from dataset import BigEarthNetDataset
-
-
-SEED = 25081992
-
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-torch.cuda.manual_seed(SEED)
-torch.cuda.manual_seed_all(SEED)
+from resnet import resnet18
 
 
 def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args):
@@ -124,8 +115,7 @@ def main(args):
     print(args)
     
     if args.use_deterministic_algorithms:
-        torch.backends.cudnn.benchmark = False
-        torch.use_deterministic_algorithms(True)
+        utils.set_seed()
     else:
         torch.backends.cudnn.benchmark = True
         
@@ -149,10 +139,17 @@ def main(args):
     )
     
     print("Creating model")
-    model = torchvision.models.get_model(args.model, weights=args.weights, num_classes=num_classes)
+    model = resnet18(weights=args.weights, num_classes=num_classes, num_channels=4)
     model.to(device)
     
-    criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+    if len(args.train_folders) == 1:
+        weights = [1.05371798, 0.36031976, 0.50730364, 132.40625, 1.24215773, 1.20471993, 1.80451448, 9.29166667]
+    else:
+        weights = [1.0539939, 0.36680884, 0.51629331, 7.47642734, 1.26578061, 1.22731468, 1.83888298, 9.4559628]
+
+    class_weights = torch.FloatTensor(weights).to(device)
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.label_smoothing)
     
     custom_keys_weight_decay = []
     if args.bias_weight_decay is not None:
@@ -287,7 +284,7 @@ def get_args_parser(add_help=True):
         "--train-crop-size", default=224, type=int, help="the random crop size used for training (default: 224)"
     )
     
-    parser.add_argument("--data-path", default="data/bigarthnet", type=str, help="dataset path")
+    parser.add_argument("--data-path", default="data/bigearthnet", type=str, help="dataset path")
     parser.add_argument("--model", default="resnet18", type=str, help="model name")
     parser.add_argument("--device", default="cuda", type=str, help="device (Use cuda or cpu Default: cuda)")
     parser.add_argument(

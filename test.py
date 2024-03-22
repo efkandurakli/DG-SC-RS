@@ -10,6 +10,7 @@ import utils
 import presets
 from torch import nn
 from dataset import BigEarthNetDataset
+from dg_model import DGModel
 
 
 
@@ -84,7 +85,10 @@ def main(args):
     )
 
     print("Creating model")
-    model = torchvision.models.get_model(args.model, weights=None, num_classes=num_classes)
+    if args.dg:
+        model = DGModel(args.model, weights=None, num_classes=num_classes)
+    else:
+        model = torchvision.models.get_model(args.model, weights=None, num_classes=num_classes)
     model.to(device)
     
 
@@ -121,6 +125,11 @@ def get_args_parser(add_help=True):
     parser.add_argument("--model-path", default="lower_bound/best_model.pth", type=str, help="model path")
 
     parser.add_argument("--test-folder", default="test", help="the test folder name")
+
+    parser.add_argument(
+        "--dg", action="store_true", help="domain generalization model"
+    )
+    
 
 
 

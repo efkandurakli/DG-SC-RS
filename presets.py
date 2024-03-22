@@ -7,8 +7,8 @@ class ClassificationPresetTrain:
         self,
         *,
         crop_size,
-        mean=(429.9430203, 614.21682446, 590.23569706),
-        std=(572.41639287, 582.87945694, 675.88746967),
+        mean=(340.76769064, 429.9430203, 614.21682446, 590.23569706),
+        std=(554.81258967, 572.41639287, 582.87945694, 675.88746967),
         interpolation=InterpolationMode.BILINEAR,
         hflip_prob=0.5,
     ):
@@ -31,8 +31,8 @@ class ClassificationPresetEval:
         *,
         crop_size,
         resize_size=256,
-        mean=(429.9430203, 614.21682446, 590.23569706),
-        std=(572.41639287, 582.87945694, 675.88746967),
+        mean=(340.76769064, 429.9430203, 614.21682446, 590.23569706),
+        std=(554.81258967, 572.41639287, 582.87945694, 675.88746967),
         interpolation=InterpolationMode.BILINEAR,
     ):
         transforms = [

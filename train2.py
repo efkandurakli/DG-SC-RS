@@ -3,7 +3,6 @@ import time
 import random
 import numpy as np
 import torch
-import torchvision
 import datetime
 from torch.utils.data.dataloader import default_collate
 from torchvision.transforms.functional import InterpolationMode
@@ -15,16 +14,9 @@ from dataset import BigEarthNetDataset
 from dg_model import DGModel
 
 
-SEED = 25081992
-
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-torch.cuda.manual_seed(SEED)
-torch.cuda.manual_seed_all(SEED)
 
 
-def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args):
+def train_one_epoch(model, criterion_class, criterion_domain, optimizer, data_loader, device, epoch, args):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value}"))
@@ -35,9 +27,9 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, arg
         start_time = time.time()
         image, target, domains = image.to(device), target.to(device), domains.to(device)
         output, domain_logits = model(image)
-        classification_loss = criterion(output, target)
-        domain_loss = criterion(domain_logits, domains)
-        loss = classification_loss + domain_loss
+        classification_loss = criterion_class(output, target)
+        domain_loss = criterion_domain(domain_logits, domains)
+        loss = classification_loss + 0.1 * domain_loss
         optimizer.zero_grad()
 
         loss.backward()
@@ -130,12 +122,11 @@ def main(args):
     print(args)
     
     if args.use_deterministic_algorithms:
-        torch.backends.cudnn.benchmark = False
-        torch.use_deterministic_algorithms(True)
+        utils.set_seed()
     else:
         torch.backends.cudnn.benchmark = True
         
-    
+        
     tr_dataset, val_dataset, train_sampler, val_sampler = load_data(args)
     
     num_classes = len(tr_dataset.classes)
@@ -157,8 +148,17 @@ def main(args):
     print("Creating model")
     model = DGModel(args.model, weights=args.weights, num_classes=num_classes)
     model.to(device)
-    
-    criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+
+    if len(args.train_folders) == 1:
+        weights = [1.05371798, 0.36031976, 0.50730364, 132.40625, 1.24215773, 1.20471993, 1.80451448, 9.29166667]
+    else:
+        weights = [1.0539939, 0.36680884, 0.51629331, 7.47642734, 1.26578061, 1.22731468, 1.83888298, 9.4559628]
+
+    class_weights = torch.FloatTensor(weights).to(device)
+
+    criterion_class = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.label_smoothing)
+
+    criterion_domain = nn.CrossEntropyLoss()
     
     custom_keys_weight_decay = []
     if args.bias_weight_decay is not None:
@@ -239,9 +239,9 @@ def main(args):
     print("Start training")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.max_epochs):
-        train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args)
+        train_one_epoch(model, criterion_class, criterion_domain, optimizer, data_loader, device, epoch, args)
         lr_scheduler.step()
-        acc = evaluate(model, criterion, data_loader_test, device=device)
+        acc = evaluate(model, criterion_class, data_loader_test, device=device)
 
         checkpoint = {
             "model": model.state_dict(),

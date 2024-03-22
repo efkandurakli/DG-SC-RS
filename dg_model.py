@@ -1,8 +1,8 @@
 import torch
-import torchvision
 import torch.nn as nn
 from typing import Any, Optional, Tuple
 from torch.autograd import Function
+from resnet import resnet18
 
 class GradientReverseFunction(Function):
     """
@@ -49,7 +49,7 @@ class DomainClassifier(nn.Module):
 class DGModel(nn.Module):
     def __init__(self, model, weights, num_classes, num_domains=3):
         super().__init__()
-        self.model =  torchvision.models.get_model(model, weights=weights, num_classes=num_classes)
+        self.model = resnet18(weights=weights, num_classes=num_classes)
 
         if self.training:
             self.domain_classifier = DomainClassifier(self.model.fc.in_features, num_domains)
