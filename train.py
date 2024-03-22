@@ -1,17 +1,14 @@
 import os
 import time
-import random
-import numpy as np
 import torch
 import datetime
 from torch.utils.data.dataloader import default_collate
-from torchvision.transforms.functional import InterpolationMode
 
 import utils
-import presets
 from torch import nn
-from dataset import BigEarthNetDataset
 from resnet import resnet18
+from constants import *
+from dataset import load_data
 
 
 def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args):
@@ -68,44 +65,6 @@ def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix="
     return metric_logger.acc1.global_avg
     
 
-def load_data(args):
-    print("Loading data")
-    
-    interpolation = InterpolationMode(args.interpolation)
-    
-    val_dir = os.path.join(args.data_path, args.val_folder)
-
-    val_resize_size, val_crop_size, train_crop_size = (
-        args.val_resize_size,
-        args.val_crop_size,
-        args.train_crop_size,
-    )
-
-    val_dataset = BigEarthNetDataset(val_dir, transform=presets.ClassificationPresetEval(
-                        crop_size=val_crop_size,
-                        resize_size=val_resize_size,
-                        interpolation=interpolation,
-                    ))
-
-    tr_datasets = []
-
-    for train_folder in args.train_folders:
-        train_dir = os.path.join(args.data_path, train_folder)
-        tr_datasets.append(
-            BigEarthNetDataset(train_dir, transform=presets.ClassificationPresetTrain(
-                crop_size=train_crop_size,
-                interpolation=interpolation,
-            ))
-        )
-
-    tr_dataset = torch.utils.data.ConcatDataset(tr_datasets)
-    tr_dataset.classes = val_dataset.classes
-
-    train_sampler = torch.utils.data.RandomSampler(tr_dataset)
-    val_sampler = torch.utils.data.SequentialSampler(val_dataset)
-    
-    
-    return tr_dataset, val_dataset, train_sampler, val_sampler
 
 def main(args):
     if args.output_dir:
@@ -120,9 +79,19 @@ def main(args):
         torch.backends.cudnn.benchmark = True
         
     
-    tr_dataset, val_dataset, train_sampler, val_sampler = load_data(args)
+    tr_dataset, val_dataset, train_sampler, val_sampler = load_data(
+        args.data_path,
+        args.train_folders,
+        args.interpolation,
+        args.val_folder,
+        args.val_resize_size,
+        args.val_crop_size,
+        args.train_crop_size,
+        args.band_groups
+    )
     
     num_classes = len(tr_dataset.classes)
+    num_channels = len(val_dataset.bands)
     
     collate_fn = default_collate
     
@@ -139,13 +108,13 @@ def main(args):
     )
     
     print("Creating model")
-    model = resnet18(weights=args.weights, num_classes=num_classes, num_channels=4)
+    model = resnet18(weights=args.weights, num_classes=num_classes, num_channels=num_channels)
     model.to(device)
     
     if len(args.train_folders) == 1:
-        weights = [1.05371798, 0.36031976, 0.50730364, 132.40625, 1.24215773, 1.20471993, 1.80451448, 9.29166667]
+        weights = TRAIN_CLASS_WEIGHTS
     else:
-        weights = [1.0539939, 0.36680884, 0.51629331, 7.47642734, 1.26578061, 1.22731468, 1.83888298, 9.4559628]
+        weights = TRAIN_AND_TEST_10_CLASS_WEIGHTS
 
     class_weights = torch.FloatTensor(weights).to(device)
 
@@ -333,6 +302,8 @@ def get_args_parser(add_help=True):
     parser.add_argument("--resume", default="", type=str, help="path of checkpoint")
     parser.add_argument("--train-folders", default=["train"], nargs='+', help="List of train folders")
     parser.add_argument("--val-folder", default="val", help="the validation folder name")
+
+    parser.add_argument("--band-groups", default=["rgb"], nargs='+', help="List of train folders")
 
     return parser
 

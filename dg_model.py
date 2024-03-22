@@ -47,9 +47,9 @@ class DomainClassifier(nn.Module):
         return self.softmax(x)
 
 class DGModel(nn.Module):
-    def __init__(self, model, weights, num_classes, num_domains=3):
+    def __init__(self, model, weights, num_classes, num_channels=3, num_domains=3):
         super().__init__()
-        self.model = resnet18(weights=weights, num_classes=num_classes)
+        self.model = resnet18(weights=weights, num_classes=num_classes, num_channels=num_channels)
 
         if self.training:
             self.domain_classifier = DomainClassifier(self.model.fc.in_features, num_domains)
