@@ -6,7 +6,7 @@ from torch.utils.data.dataloader import default_collate
 
 import utils
 from torch import nn
-from dataset import load_data
+from dataset import load_train_val_data
 from dg_model import DGModel
 from constants import *
 
@@ -85,7 +85,7 @@ def main(args):
         torch.backends.cudnn.benchmark = True
         
         
-    tr_dataset, val_dataset, train_sampler, val_sampler = load_data(
+    tr_dataset, val_dataset, train_sampler, val_sampler = load_train_val_data(
         args.data_path,
         args.train_folders,
         args.interpolation,

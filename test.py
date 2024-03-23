@@ -70,7 +70,7 @@ def main(args):
 
     print("Creating model")
     if args.dg:
-        model = DGModel(args.model, weights=args.weights, num_classes=num_classes, num_channels=num_channels)
+        model = DGModel(args.model, weights=None, num_classes=num_classes, num_channels=num_channels)
     else:
         model = resnet18(weights=None, num_classes=num_classes, num_channels=num_channels)
     model.to(device)
