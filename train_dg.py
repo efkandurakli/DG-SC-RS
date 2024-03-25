@@ -26,7 +26,7 @@ def train_one_epoch(model, criterion_class, criterion_domain, optimizer, data_lo
         output, domain_logits = model(image)
         classification_loss = criterion_class(output, target)
         domain_loss = criterion_domain(domain_logits, domains)
-        loss = classification_loss + 0.1 * domain_loss
+        loss = classification_loss + 0.5 * domain_loss
         optimizer.zero_grad()
 
         loss.backward()
