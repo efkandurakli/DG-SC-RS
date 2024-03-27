@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 import torch
 import random
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 def mkdir(path):
@@ -254,3 +255,14 @@ def set_seed(seed = 42) -> None:
 
     os.environ["PYTHONHASHSEED"] = str(seed)
     print(f"Random seed set as {seed}")
+    
+def plot_losses(train_losses, val_losses, save_path):
+    epochs = range(1, len(train_losses) + 1)
+    plt.plot(epochs, train_losses, 'b', label='Training loss')
+    plt.plot(epochs, val_losses, 'r', label='Validation loss')
+    plt.title('Training and Validation Losses')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig(save_path)
+    plt.clf()

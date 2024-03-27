@@ -11,6 +11,7 @@ from constants import *
 from dataset import load_train_val_data
 
 
+
 def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -38,7 +39,9 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, arg
         metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
         metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
         metric_logger.meters["img/s"].update(batch_size / (time.time() - start_time))
-
+    
+    
+    return metric_logger
 
 def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix=""):
     model.eval()
@@ -62,7 +65,7 @@ def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix="
     # gather the stats from all processes
 
     print(f"{header} Acc@1 {metric_logger.acc1.global_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}")
-    return metric_logger.acc1.global_avg
+    return metric_logger
     
 
 
@@ -197,12 +200,16 @@ def main(args):
         epochs_without_improvement = checkpoint["epochs_without_improvement"]
 
     print("Start training")
+    
+    train_losses = []
+    val_losses = []
+    
     start_time = time.time()
     for epoch in range(args.start_epoch, args.max_epochs):
-        train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args)
+        train_metric_logger = train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args)
         lr_scheduler.step()
-        acc = evaluate(model, criterion, data_loader_test, device=device)
-
+        val_metric_logger = evaluate(model, criterion, data_loader_test, device=device)
+        
         checkpoint = {
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
@@ -211,6 +218,19 @@ def main(args):
             "args": args,
             "epochs_without_improvement": epochs_without_improvement
         }
+        
+        train_loss = train_metric_logger.meters["loss"].global_avg
+        train_losses.append(train_loss)
+        
+        val_loss = val_metric_logger.meters["loss"].global_avg
+        val_losses.append(val_loss)
+        
+        acc = val_metric_logger.meters["acc1"].global_avg
+        
+        
+        plot_save_path = os.path.join(args.output_dir, "train_val_loss_graph.png")
+        
+        utils.plot_losses(train_losses, val_losses, plot_save_path)
         
         torch.save(checkpoint, os.path.join(args.output_dir, "checkpoint.pth"))
 
