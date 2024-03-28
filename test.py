@@ -4,7 +4,8 @@ import torch
 import torchvision
 import datetime
 from torch.utils.data.dataloader import default_collate
-
+from sklearn.metrics import confusion_matrix
+import numpy as np
 import utils
 from dataset import load_test_data
 from dg_model import DGModel
@@ -18,22 +19,30 @@ def evaluate(model, data_loader, device, print_freq=100, log_suffix=""):
     header = f"Test: {log_suffix}"
 
     num_processed_samples = 0
+    all_predictions = []
+    all_targets = []
     with torch.inference_mode():
         for image, target, _ in metric_logger.log_every(data_loader, print_freq, header):
             image = image.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(image)
-
             acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
 
             batch_size = image.shape[0]
             metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
             metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
             num_processed_samples += batch_size
+            _, predictions = output.max(1)
+            all_predictions.extend(predictions.cpu().numpy())
+            all_targets.extend(target.cpu().numpy())
 
     metric_logger.synchronize_between_processes()
 
     print(f"{header} Acc@1 {metric_logger.acc1.global_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}")
+    # Compute confusion matrix
+    conf_matrix = confusion_matrix(all_targets, all_predictions)
+    print("Confusion Matrix:")
+    print(conf_matrix)
     return metric_logger.acc1.global_avg
     
 
