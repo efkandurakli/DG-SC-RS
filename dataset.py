@@ -1,6 +1,7 @@
 import os
 import json
 import numpy as np
+import cv2
 from osgeo import gdal
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
@@ -58,10 +59,7 @@ class BigEarthNetDataset(Dataset):
 
         for band in self.bands:
             tiff_file = [img_file for img_file in image_files if img_file.split("_")[5][:-4] == band][0]
-            band_ds = gdal.Open(os.path.join(self.root, "images", images_folder, tiff_file),  gdal.GA_ReadOnly)
-            raster_band = band_ds.GetRasterBand(1)
-            band_data = raster_band.ReadAsArray()
-            band_data = np.resize(band_data, (120,120))
+            band_data = cv2.imread(os.path.join(self.root, "images", images_folder, tiff_file),  cv2.IMREAD_UNCHANGED)
             bands.append(band_data)
 
         image = np.stack(bands, axis=0).astype(np.float32)

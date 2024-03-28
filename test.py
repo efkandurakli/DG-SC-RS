@@ -4,14 +4,25 @@ import torch
 import torchvision
 import datetime
 from torch.utils.data.dataloader import default_collate
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, cohen_kappa_score
 import numpy as np
 import utils
 from dataset import load_test_data
 from dg_model import DGModel
 from resnet import resnet18
+import matplotlib.pyplot as plt
 
 
+CLASSES = [
+    "MW",
+    "AL",
+    "UF",
+    "P",
+    "CF",
+    "BLF",
+    "IW",
+    "MF"
+]
 
 def evaluate(model, data_loader, device, print_freq=100, log_suffix=""):
     model.eval()
@@ -39,10 +50,17 @@ def evaluate(model, data_loader, device, print_freq=100, log_suffix=""):
     metric_logger.synchronize_between_processes()
 
     print(f"{header} Acc@1 {metric_logger.acc1.global_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}")
-    # Compute confusion matrix
+
+
     conf_matrix = confusion_matrix(all_targets, all_predictions)
-    print("Confusion Matrix:")
-    print(conf_matrix)
+    kappa_score = cohen_kappa_score(all_targets, all_predictions)
+    print("Kappa score: ", kappa_score)
+
+
+    disp = ConfusionMatrixDisplay(confusion_matrix=conf_matrix, display_labels=CLASSES)
+    disp.plot()
+    plt.savefig(os.path.join(args.output_dir, "confusion_matrix.png"))
+    plt.clf()
     return metric_logger.acc1.global_avg
     
 
@@ -124,6 +142,8 @@ def get_args_parser(add_help=True):
     )
 
     parser.add_argument("--band-groups", default=["rgb"], nargs='+', help="List of train folders")
+
+    parser.add_argument("--output-dir", default="./output", type=str, help="path to save outputs")
 
 
 

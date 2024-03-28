@@ -77,7 +77,7 @@ def main(args):
     print(args)
     
     if args.use_deterministic_algorithms:
-        utils.set_seed()
+        utils.set_seed(2342342)
     else:
         torch.backends.cudnn.benchmark = True
         
