@@ -3,6 +3,8 @@ import time
 import torch
 import datetime
 from torch.utils.data.dataloader import default_collate
+from sklearn.metrics import cohen_kappa_score
+
 
 import utils
 from torch import nn
@@ -49,6 +51,8 @@ def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix="
     header = f"Test: {log_suffix}"
 
     num_processed_samples = 0
+    all_predictions = []
+    all_targets = []
     with torch.inference_mode():
         for image, target, _ in metric_logger.log_every(data_loader, print_freq, header):
             image = image.to(device, non_blocking=True)
@@ -62,9 +66,14 @@ def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix="
             metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
             metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
             num_processed_samples += batch_size
+            _, predictions = output.max(1)
+            all_predictions.extend(predictions.cpu().numpy())
+            all_targets.extend(target.cpu().numpy())
     # gather the stats from all processes
 
-    print(f"{header} Acc@1 {metric_logger.acc1.global_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}")
+    kappa_score = cohen_kappa_score(all_targets, all_predictions)
+    metric_logger.meters["Kappa"] = kappa_score
+    print(f"{header} Acc@1 {metric_logger.acc1.global_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}  Kappa {kappa_score:.3f}")
     return metric_logger
     
 
@@ -188,7 +197,7 @@ def main(args):
     else:
         lr_scheduler = main_lr_scheduler
     
-    best_acc = 0.0
+    best_kappa = 0.0
     epochs_without_improvement = 0
 
     if args.resume:
@@ -225,7 +234,7 @@ def main(args):
         val_loss = val_metric_logger.meters["loss"].global_avg
         val_losses.append(val_loss)
         
-        acc = val_metric_logger.meters["acc1"].global_avg
+        kappa = val_metric_logger.meters["Kappa"]
         
         
         plot_save_path = os.path.join(args.output_dir, "train_val_loss_graph.png")
@@ -234,9 +243,9 @@ def main(args):
         
         torch.save(checkpoint, os.path.join(args.output_dir, "checkpoint.pth"))
 
-        if acc > best_acc:
+        if kappa > best_kappa:
             torch.save(checkpoint, os.path.join(args.output_dir, "best_model.pth"))
-            best_acc = acc
+            best_kappa = kappa
             epochs_without_improvement = 0
         else:
             epochs_without_improvement += 1
