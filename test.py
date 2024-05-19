@@ -17,7 +17,6 @@ CLASSES = [
     "MW",
     "AL",
     "UF",
-    "P",
     "CF",
     "BLF",
     "IW",

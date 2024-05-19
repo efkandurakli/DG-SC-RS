@@ -14,7 +14,6 @@ CLASSES = [
     "Marine waters",
     "Arable land",
     "Urban fabric",
-    "Pastures",
     "Coniferous forest",
     "Broad-leaved forest",
     "Inland waters",

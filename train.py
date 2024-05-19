@@ -86,7 +86,7 @@ def main(args):
     print(args)
     
     if args.use_deterministic_algorithms:
-        utils.set_seed(2342342)
+        utils.set_seed(args.seed)
     else:
         torch.backends.cudnn.benchmark = True
         
@@ -130,7 +130,7 @@ def main(args):
 
     class_weights = torch.FloatTensor(weights).to(device)
 
-    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.label_smoothing)
+    criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     
     custom_keys_weight_decay = []
     if args.bias_weight_decay is not None:
@@ -333,6 +333,8 @@ def get_args_parser(add_help=True):
     parser.add_argument("--val-folder", default="val", help="the validation folder name")
 
     parser.add_argument("--band-groups", default=["rgb"], nargs='+', help="List of train folders")
+
+    parser.add_argument("--seed", default=2342342, type=int, help="The seed value of random")
 
     return parser
 
