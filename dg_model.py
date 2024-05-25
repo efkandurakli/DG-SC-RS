@@ -64,3 +64,21 @@ class DGModel(nn.Module):
             return self.model(x), self.domain_classifier(self.fc_features)
         
         return self.model(x)
+    
+class DGCoralModel(nn.Module):
+    def __init__(self, model, weights, num_classes, num_channels=3, num_domains=3):
+        super().__init__()
+        self.model = resnet18(weights=weights, num_classes=num_classes, num_channels=num_channels)
+
+        if self.training:
+            self.model.fc.register_forward_hook(self.store_fc_features)
+    
+    def store_fc_features(self, module, input, output):
+        self.fc_features = input[0]
+
+
+    def forward(self, x):
+        if self.training:
+            return self.model(x), self.fc_features
+        
+        return self.model(x)

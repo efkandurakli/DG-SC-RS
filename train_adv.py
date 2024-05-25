@@ -10,11 +10,10 @@ from torch import nn
 from dataset import load_train_val_data
 from dg_model import DGModel
 from constants import *
+from automatic_weighted_loss import AutomaticWeightedLoss
 
 
-
-
-def train_one_epoch(model, criterion_class, criterion_domain, optimizer, data_loader, device, epoch, args):
+def train_one_epoch(model, criterion_class, criterion_domain, optimizer, data_loader, device, epoch, awl, args):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value}"))
@@ -27,9 +26,11 @@ def train_one_epoch(model, criterion_class, criterion_domain, optimizer, data_lo
         output, domain_logits = model(image)
         classification_loss = criterion_class(output, target)
         domain_loss = criterion_domain(domain_logits, domains)
-        loss = classification_loss + 0.5 * domain_loss
+        if awl:
+            loss = awl(classification_loss, domain_loss)
+        else:
+            loss = classification_loss + domain_loss * args.trade_off
         optimizer.zero_grad()
-
         loss.backward()
 
         if args.clip_grad_norm is not None:
@@ -122,17 +123,21 @@ def main(args):
     data_loader_test = torch.utils.data.DataLoader(
         val_dataset, batch_size=1, sampler=val_sampler, num_workers=args.workers, pin_memory=True
     )
+
+    if args.pretrained_model:
+        if "swir" in args.band_groups:
+            num_channels = 9
+        else:
+            num_channels = 4
     
     print("Creating model")
     model = DGModel(args.model, weights=args.weights, num_classes=num_classes, num_channels=num_channels)
+
+    if args.pretrained_model:
+        checkpoint = torch.load(args.pretrained_model, map_location="cpu")
+        model.load_state_dict(checkpoint["model"])
+        model.model.conv1 = utils.copy_weghts(model.model.conv1, len(val_dataset.bands))
     model.to(device)
-
-    if len(args.train_folders) == 1:
-        weights = TRAIN_CLASS_WEIGHTS
-    else:
-        weights = TRAIN_AND_TEST_10_CLASS_WEIGHTS
-
-    class_weights = torch.FloatTensor(weights).to(device)
 
     criterion_class = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
 
@@ -141,14 +146,18 @@ def main(args):
     custom_keys_weight_decay = []
     if args.bias_weight_decay is not None:
         custom_keys_weight_decay.append(("bias", args.bias_weight_decay))
-    
-    
+        
     parameters = utils.set_weight_decay(
         model,
         args.weight_decay,
         norm_weight_decay=args.norm_weight_decay,
         custom_keys_weight_decay=custom_keys_weight_decay if len(custom_keys_weight_decay) > 0 else None,
     )
+
+    awl = None
+    if args.auto_weighted_loss:
+        awl = AutomaticWeightedLoss(2)
+        parameters.append( {'params': awl.parameters(), 'weight_decay': 0})
     
     opt_name = args.opt.lower()
     if opt_name.startswith("sgd"):
@@ -218,10 +227,11 @@ def main(args):
     
     train_losses = []
     val_losses = []
+
     
     start_time = time.time()
     for epoch in range(args.start_epoch, args.max_epochs):
-        train_metric_logger = train_one_epoch(model, criterion_class, criterion_domain, optimizer, data_loader, device, epoch, args)
+        train_metric_logger = train_one_epoch(model, criterion_class, criterion_domain, optimizer, data_loader, device, epoch, awl, args)
         lr_scheduler.step()
         val_metric_logger = evaluate(model, criterion_class, data_loader_test, device=device)
 
@@ -337,11 +347,13 @@ def get_args_parser(add_help=True):
     parser.add_argument("--resume", default="", type=str, help="path of checkpoint")
     parser.add_argument("--train-folders", default=["train"], nargs='+', help="List of train folders")
     parser.add_argument("--val-folder", default="val", help="the validation folder name")
-
     parser.add_argument("--band-groups", default=["rgb"], nargs='+', help="List of train folders")
-
+    parser.add_argument("--pretrained-model", type=str, default=None, help="the path of the pretrained model")
     parser.add_argument("--seed", default=2342342, type=int, help="The seed value of random")
-
+    parser.add_argument('--trade-off', default=0.5, type=float, help='the trade off hyper parameter for domain adversarial loss')
+    parser.add_argument(
+        "--auto-weighted-loss", action="store_true", help="whether the auto weighted loss is used"
+    )
 
     return parser
 

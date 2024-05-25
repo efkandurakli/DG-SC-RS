@@ -4,27 +4,77 @@ import torch
 import datetime
 from torch.utils.data.dataloader import default_collate
 from sklearn.metrics import cohen_kappa_score
+
 import utils
 from torch import nn
-from resnet import resnet18
+from dataset import load_train_val_data_for_coral
+from dg_model import DGCoralModel
+from coral import CorrelationAlignmentLoss
 from constants import *
-from dataset import load_train_val_data
+from automatic_weighted_loss import AutomaticWeightedLoss
 
-
-def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args):
+def train_one_epoch(model, train_iter, criterion_class, criterion_coral, optimizer, device, epoch, awl, args):
     model.train()
-    metric_logger = utils.MetricLogger(delimiter="  ")
-    metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value}"))
-    metric_logger.add_meter("img/s", utils.SmoothedValue(window_size=10, fmt="{value}"))
-    
-    header = f"Epoch: [{epoch}]"
-    for i, (image, target, domain) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
-        start_time = time.time()
-        image, target = image.to(device), target.to(device)
-        output = model(image)
-        loss = criterion(output, target)
-        optimizer.zero_grad()
+    batch_time = utils.AverageMeter('Time', ':4.2f')
+    data_time = utils.AverageMeter('Data', ':3.1f')
+    losses = utils.AverageMeter('Loss', ':3.5f')
+    losses_ce = utils.AverageMeter('CELoss', ':3.5f')
+    losses_penalty = utils.AverageMeter('Penalty Loss', ':3.5f')
+    cls_accs = utils.AverageMeter('Cls Acc', ':3.3f')
 
+    progress = utils.ProgressMeter(
+        args.iters_per_epoch,
+        [batch_time, data_time, losses, losses_ce, losses_penalty, cls_accs],
+        prefix="Epoch: [{}]".format(epoch))
+
+    end = time.time()
+    for i in range(args.iters_per_epoch):
+        x_all, labels_all, _ = next(train_iter)
+        x_all = x_all.to(device)
+        labels_all = labels_all.to(device)
+
+        # compute output
+        y_all, f_all = model(x_all)
+
+        # measure data loading time
+        data_time.update(time.time() - end)
+
+        # separate into different domains
+        y_all = y_all.chunk(args.n_domains_per_batch, dim=0)
+        f_all = f_all.chunk(args.n_domains_per_batch, dim=0)
+        labels_all = labels_all.chunk(args.n_domains_per_batch, dim=0)
+
+        loss_ce = 0
+        loss_penalty = 0
+        cls_acc = 0
+        for domain_i in range(args.n_domains_per_batch):
+            # cls loss
+            y_i, labels_i = y_all[domain_i], labels_all[domain_i]
+            loss_ce +=criterion_class(y_i, labels_i)
+            # update acc
+            cls_acc += utils.accuracy(y_i, labels_i)[0] / args.n_domains_per_batch
+            # correlation alignment loss
+            for domain_j in range(domain_i + 1, args.n_domains_per_batch):
+                f_i = f_all[domain_i]
+                f_j = f_all[domain_j]
+                loss_penalty += criterion_coral(f_i, f_j)
+
+        # normalize loss
+        loss_ce /= args.n_domains_per_batch
+        loss_penalty /= args.n_domains_per_batch * (args.n_domains_per_batch - 1) / 2
+
+        if awl:
+            loss = awl(loss_ce, loss_penalty)
+        else:
+            loss = loss_ce + loss_penalty * args.trade_off
+
+        losses.update(loss.item(), x_all.size(0))
+        losses_ce.update(loss_ce.item(), x_all.size(0))
+        losses_penalty.update(loss_penalty.item(), x_all.size(0))
+        cls_accs.update(cls_acc.item(), x_all.size(0))
+
+        # compute gradient and do SGD step
+        optimizer.zero_grad()
         loss.backward()
 
         if args.clip_grad_norm is not None:
@@ -32,15 +82,15 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, arg
         
         optimizer.step()
 
-        acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
-        batch_size = image.shape[0]
-        metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
-        metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
-        metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
-        metric_logger.meters["img/s"].update(batch_size / (time.time() - start_time))
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+        if i % args.print_freq == 0:
+            progress.display(i)
     
-    
-    return metric_logger
+    return losses.avg
+
 
 def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix=""):
     model.eval()
@@ -66,11 +116,13 @@ def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix="
             _, predictions = output.max(1)
             all_predictions.extend(predictions.cpu().numpy())
             all_targets.extend(target.cpu().numpy())
+    # gather the stats from all processes
 
     kappa_score = cohen_kappa_score(all_targets, all_predictions)
     metric_logger.meters["Kappa"] = kappa_score
     print(f"{header} Acc@1 {metric_logger.acc1.global_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}  Kappa {kappa_score:.3f}")
     return metric_logger
+    
 
 def main(args):
     if args.output_dir:
@@ -84,8 +136,8 @@ def main(args):
     else:
         torch.backends.cudnn.benchmark = True
         
-    
-    tr_dataset, val_dataset, train_sampler, val_sampler = load_train_val_data(
+        
+    tr_dataset, val_dataset, train_sampler, val_sampler = load_train_val_data_for_coral(
         args.data_path,
         args.train_folders,
         args.interpolation,
@@ -93,12 +145,14 @@ def main(args):
         args.val_resize_size,
         args.val_crop_size,
         args.train_crop_size,
+        args.batch_size,
         args.band_groups
     )
     
+
     num_classes = len(tr_dataset.classes)
     num_channels = len(val_dataset.bands)
-
+    
     collate_fn = default_collate
     
     data_loader = torch.utils.data.DataLoader(
@@ -108,28 +162,32 @@ def main(args):
         num_workers=args.workers,
         pin_memory=True,
         collate_fn=collate_fn,
+        drop_last=True
     )
+
     data_loader_test = torch.utils.data.DataLoader(
         val_dataset, batch_size=1, sampler=val_sampler, num_workers=args.workers, pin_memory=True
     )
-    
+
+    train_iter = utils.ForeverDataIterator(data_loader)
+
     if args.pretrained_model:
         if "swir" in args.band_groups:
             num_channels = 9
         else:
             num_channels = 4
-
+    
     print("Creating model")
-    model = resnet18(weights=args.weights, num_classes=num_classes, num_channels=num_channels)
+    model = DGCoralModel(args.model, weights=args.weights, num_classes=num_classes, num_channels=num_channels)
 
     if args.pretrained_model:
         checkpoint = torch.load(args.pretrained_model, map_location="cpu")
         model.load_state_dict(checkpoint["model"])
-        model.conv1 = utils.copy_weghts(model.conv1, len(val_dataset.bands))
+        model.model.conv1 = utils.copy_weghts(model.model.conv1, len(val_dataset.bands))
     model.to(device)
-    
-    criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
-    
+
+    criterion_class = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+
     custom_keys_weight_decay = []
     if args.bias_weight_decay is not None:
         custom_keys_weight_decay.append(("bias", args.bias_weight_decay))
@@ -141,6 +199,11 @@ def main(args):
         norm_weight_decay=args.norm_weight_decay,
         custom_keys_weight_decay=custom_keys_weight_decay if len(custom_keys_weight_decay) > 0 else None,
     )
+
+    awl = None
+    if args.auto_weighted_loss:
+        awl = AutomaticWeightedLoss(2)
+        parameters.append( {'params': awl.parameters(), 'weight_decay': 0})
     
     opt_name = args.opt.lower()
     if opt_name.startswith("sgd"):
@@ -194,6 +257,8 @@ def main(args):
         )
     else:
         lr_scheduler = main_lr_scheduler
+
+    correlation_alignment_loss = CorrelationAlignmentLoss().to(device)
     
     best_kappa = 0.0
     epochs_without_improvement = 0
@@ -213,10 +278,10 @@ def main(args):
     
     start_time = time.time()
     for epoch in range(args.start_epoch, args.max_epochs):
-        train_metric_logger = train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args)
+        train_loss = train_one_epoch(model, train_iter, criterion_class, correlation_alignment_loss, optimizer, device, epoch, awl, args)
         lr_scheduler.step()
-        val_metric_logger = evaluate(model, criterion, data_loader_test, device=device)
-        
+        val_metric_logger = evaluate(model, criterion_class, data_loader_test, device=device)
+
         checkpoint = {
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
@@ -226,7 +291,6 @@ def main(args):
             "epochs_without_improvement": epochs_without_improvement
         }
         
-        train_loss = train_metric_logger.meters["loss"].global_avg
         train_losses.append(train_loss)
         
         val_loss = val_metric_logger.meters["loss"].global_avg
@@ -251,7 +315,6 @@ def main(args):
         if epochs_without_improvement >= args.patience:
             print("Early Stopping")
             break
-    
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f"Training time {total_time_str}")
@@ -332,6 +395,12 @@ def get_args_parser(add_help=True):
     parser.add_argument("--band-groups", default=["rgb"], nargs='+', help="List of train folders")
     parser.add_argument("--pretrained-model", type=str, default=None, help="the path of the pretrained model")
     parser.add_argument("--seed", default=2342342, type=int, help="The seed value of random")
+    parser.add_argument('--trade-off', default=1, type=float, help='the trade off hyper parameter for domain adversarial loss')
+    parser.add_argument(
+        "--auto-weighted-loss", action="store_true", help="whether the auto weighted loss is used"
+    )
+    parser.add_argument('--iters-per-epoch', default=500, type=int, help='Number of iterations per epoch')
+    parser.add_argument('--n-domains-per-batch', default=3, type=int, help='number of domains in each mini-batch')
 
     return parser
 

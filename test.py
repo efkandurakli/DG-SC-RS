@@ -8,7 +8,7 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, cohen_kapp
 import numpy as np
 import utils
 from dataset import load_test_data
-from dg_model import DGModel
+from dg_model import DGModel, DGCoralModel
 from resnet import resnet18
 import matplotlib.pyplot as plt
 
@@ -95,8 +95,10 @@ def main(args):
     )
 
     print("Creating model")
-    if args.dg:
+    if args.dg_model == "adv":
         model = DGModel(args.model, weights=None, num_classes=num_classes, num_channels=num_channels)
+    elif args.dg_model == "coral":
+        model = DGCoralModel(args.model, weights=None, num_classes=num_classes, num_channels=num_channels)
     else:
         model = resnet18(weights=None, num_classes=num_classes, num_channels=num_channels)
     model.to(device)
@@ -117,11 +119,9 @@ def get_args_parser(add_help=True):
     import argparse
 
     parser = argparse.ArgumentParser(description="BigearthNet Classification Training", add_help=add_help)
-
     parser.add_argument("--data-path", default="data/bigearthnet", type=str, help="dataset path")
     parser.add_argument("--model", default="resnet18", type=str, help="model name")
     parser.add_argument("--device", default="cuda", type=str, help="device (Use cuda or cpu Default: cuda)")
-
     parser.add_argument(
         "--interpolation", default="bilinear", type=str, help="the interpolation method (default: bilinear)"
     )
@@ -131,13 +131,10 @@ def get_args_parser(add_help=True):
     parser.add_argument(
         "--test-crop-size", default=224, type=int, help="the central crop size used for validation (default: 224)"
     )
-
     parser.add_argument("--model-path", default="lower_bound/best_model.pth", type=str, help="model path")
-
     parser.add_argument("--test-folder", default="test", help="the test folder name")
-
     parser.add_argument(
-        "--dg", action="store_true", help="domain generalization model"
+        "--dg-model", default=None, type=str, help="domain generalization model"
     )
 
     parser.add_argument("--band-groups", default=["rgb"], nargs='+', help="List of train folders")

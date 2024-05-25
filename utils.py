@@ -5,9 +5,11 @@ import time
 from collections import defaultdict, deque
 from typing import List, Optional, Tuple
 import torch
+from torch import nn
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
 
 
 def mkdir(path):
@@ -16,6 +18,86 @@ def mkdir(path):
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
+
+def send_to_device(tensor, device):
+    if isinstance(tensor, (list, tuple)):
+        return type(tensor)(send_to_device(t, device) for t in tensor)
+    elif isinstance(tensor, dict):
+        return type(tensor)({k: send_to_device(v, device) for k, v in tensor.items()})
+    elif not hasattr(tensor, "to"):
+        return tensor
+    return tensor.to(device)
+
+class ForeverDataIterator:
+    r"""A data iterator that will never stop producing data"""
+
+    def __init__(self, data_loader: DataLoader, device=None):
+        self.data_loader = data_loader
+        self.iter = iter(self.data_loader)
+        self.device = device
+
+    def __next__(self):
+        try:
+            data = next(self.iter)
+            if self.device is not None:
+                data = send_to_device(data, self.device)
+        except StopIteration:
+            self.iter = iter(self.data_loader)
+            data = next(self.iter)
+            if self.device is not None:
+                data = send_to_device(data, self.device)
+        return data
+
+    def __len__(self):
+        return len(self.data_loader)
+    
+class ProgressMeter(object):
+    def __init__(self, num_batches, meters, prefix=""):
+        self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
+        self.meters = meters
+        self.prefix = prefix
+
+    def display(self, batch):
+        entries = [self.prefix + self.batch_fmtstr.format(batch)]
+        entries += [str(meter) for meter in self.meters]
+        print('\t'.join(entries))
+
+    def _get_batch_fmtstr(self, num_batches):
+        num_digits = len(str(num_batches // 1))
+        fmt = '{:' + str(num_digits) + 'd}'
+        return '[' + fmt + '/' + fmt.format(num_batches) + ']'
+
+class AverageMeter(object):
+    r"""Computes and stores the average and current value.
+
+    Examples::
+
+        >>> # Initialize a meter to record loss
+        >>> losses = AverageMeter()
+        >>> # Update meter after every minibatch update
+        >>> losses.update(loss_value, batch_size)
+    """
+    def __init__(self, name: str, fmt: Optional[str] = ':f'):
+        self.name = name
+        self.fmt = fmt
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        if self.count > 0:
+            self.avg = self.sum / self.count
+
+    def __str__(self):
+        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
+        return fmtstr.format(**self.__dict__)
         
 class SmoothedValue:
     """Track a series of values and provide access to smoothed values over a
@@ -256,6 +338,25 @@ def set_seed(seed = 42) -> None:
     os.environ["PYTHONHASHSEED"] = str(seed)
     print(f"Random seed set as {seed}")
     
+def copy_weghts(conv, new_in_channels):
+    in_channels = conv.in_channels
+    out_channels = conv.out_channels
+    kernel_size = conv.kernel_size
+    stride = conv.stride
+    padding = conv.padding
+    bias = conv.bias
+
+    new_conv = nn.Conv2d(new_in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias)
+
+    new_conv.weight.requires_grad = True
+
+    nn.init.kaiming_normal_(new_conv.weight, mode="fan_out", nonlinearity="relu")
+
+    with torch.no_grad():
+        new_conv.weight[:, :in_channels, :, :] =  conv.weight
+
+    return new_conv
+
 def plot_losses(train_losses, val_losses, save_path):
     epochs = range(1, len(train_losses) + 1)
     plt.plot(epochs, train_losses, 'b', label='Training loss')
