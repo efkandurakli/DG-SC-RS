@@ -203,7 +203,7 @@ def main(args):
     awl = None
     if args.auto_weighted_loss:
         awl = AutomaticWeightedLoss(2)
-        parameters.append( {'params': awl.parameters(), 'weight_decay': 0})
+        parameters.append( {'params': awl.parameters(), 'weight_decay': args.weight_decay})
     
     opt_name = args.opt.lower()
     if opt_name.startswith("sgd"):
