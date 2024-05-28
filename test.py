@@ -10,6 +10,7 @@ import utils
 from dataset import load_test_data
 from dg_model import DGModel, DGCoralModel
 from resnet import resnet18
+from mixstyle import resnet18 as MixStyleModel
 import matplotlib.pyplot as plt
 
 
@@ -99,6 +100,8 @@ def main(args):
         model = DGModel(args.model, weights=None, num_classes=num_classes, num_channels=num_channels)
     elif args.dg_model == "coral":
         model = DGCoralModel(args.model, weights=None, num_classes=num_classes, num_channels=num_channels)
+    elif args.dg_model == "mixstyle":
+        model = MixStyleModel(num_classes=num_classes, num_channels=num_channels)
     else:
         model = resnet18(weights=None, num_classes=num_classes, num_channels=num_channels)
     model.to(device)

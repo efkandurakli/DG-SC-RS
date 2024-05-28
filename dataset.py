@@ -251,7 +251,8 @@ def load_train_val_data_for_coral(
         val_crop_size,
         train_crop_size,
         batch_size,
-        band_groups
+        band_groups,
+        n_domains_per_batch
     ):
     print("Loading data")
     
@@ -300,7 +301,7 @@ def load_train_val_data_for_coral(
     tr_dataset = ConcatDataset([finland_dataset, portugal_dataset, serbia_dataset])
     tr_dataset.classes = val_dataset.classes
 
-    train_sampler = RandomDomainSampler(tr_dataset, batch_size, n_domains_per_batch=3)
+    train_sampler = RandomDomainSampler(tr_dataset, batch_size, n_domains_per_batch=n_domains_per_batch)
 
     val_sampler = torch.utils.data.SequentialSampler(val_dataset)
     
