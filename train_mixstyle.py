@@ -144,7 +144,7 @@ def main(args):
     if args.pretrained_model:
         checkpoint = torch.load(args.pretrained_model, map_location="cpu")
         model.load_state_dict(checkpoint["model"])
-        model.model.conv1 = utils.copy_weghts(model.model.conv1, len(val_dataset.bands))
+        model.conv1 = utils.copy_weghts(model.conv1, len(val_dataset.bands))
     model.to(device)
 
     criterion_class = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)

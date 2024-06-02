@@ -146,7 +146,8 @@ def main(args):
         args.val_crop_size,
         args.train_crop_size,
         args.batch_size,
-        args.band_groups
+        args.band_groups,
+        args.n_domains_per_batch
     )
     
 
