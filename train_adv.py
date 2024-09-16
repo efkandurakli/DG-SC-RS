@@ -125,10 +125,7 @@ def main(args):
     )
 
     if args.pretrained_model:
-        if "swir" in args.band_groups:
-            num_channels = 9
-        else:
-            num_channels = 4
+        num_channels = args.num_channels
     
     print("Creating model")
     model = DGModel(args.model, weights=args.weights, num_classes=num_classes, num_channels=num_channels)
@@ -354,6 +351,7 @@ def get_args_parser(add_help=True):
     parser.add_argument(
         "--auto-weighted-loss", action="store_true", help="whether the auto weighted loss is used"
     )
+    parser.add_argument('--num-channels', default=4, type=int, help='The number of channels for pretrained model')
 
     return parser
 

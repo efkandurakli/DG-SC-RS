@@ -8,12 +8,26 @@ from sklearn.metrics import cohen_kappa_score
 import utils
 from torch import nn
 from dataset import load_train_val_data_for_coral
-from dg_model import DGCoralModel
-from coral import CorrelationAlignmentLoss
+from resnet import resnet18
 from constants import *
 from automatic_weighted_loss import AutomaticWeightedLoss
+import torch.nn.functional as F
+import torch.autograd as autograd
 
-def train_one_epoch(model, train_iter, criterion_class, criterion_coral, optimizer, device, epoch, awl, args):
+class InvariancePenaltyLoss(nn.Module):
+    def __init__(self):
+        super(InvariancePenaltyLoss, self).__init__()
+        self.scale = torch.tensor(1.).requires_grad_()
+
+    def forward(self, y: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        loss_1 = F.cross_entropy(y[::2] * self.scale, labels[::2])
+        loss_2 = F.cross_entropy(y[1::2] * self.scale, labels[1::2])
+        grad_1 = autograd.grad(loss_1, [self.scale], create_graph=True)[0]
+        grad_2 = autograd.grad(loss_2, [self.scale], create_graph=True)[0]
+        penalty = torch.sum(grad_1 * grad_2)
+        return penalty
+    
+def train_one_epoch(model, train_iter, criterion_class, criterion_irm, optimizer, device, epoch, awl, args):
     model.train()
     batch_time = utils.AverageMeter('Time', ':4.2f')
     data_time = utils.AverageMeter('Data', ':3.1f')
@@ -36,37 +50,22 @@ def train_one_epoch(model, train_iter, criterion_class, criterion_coral, optimiz
         # measure data loading time
         data_time.update(time.time() - end)
 
-        # compute output
-        y_all, f_all = model(x_all)
+        y_all = model(x_all)
 
-        # separate into different domains
-        y_all = y_all.chunk(args.n_domains_per_batch, dim=0)
-        f_all = f_all.chunk(args.n_domains_per_batch, dim=0)
-        labels_all = labels_all.chunk(args.n_domains_per_batch, dim=0)
+        loss_ce = criterion_class(y_all, labels_all)
 
-        loss_ce = 0
         loss_penalty = 0
-        cls_acc = 0
-        for domain_i in range(args.n_domains_per_batch):
-            # cls loss
-            y_i, labels_i = y_all[domain_i], labels_all[domain_i]
-            loss_ce +=criterion_class(y_i, labels_i)
-            # update acc
-            cls_acc += utils.accuracy(y_i, labels_i)[0] / args.n_domains_per_batch
-            # correlation alignment loss
-            for domain_j in range(domain_i + 1, args.n_domains_per_batch):
-                f_i = f_all[domain_i]
-                f_j = f_all[domain_j]
-                loss_penalty += criterion_coral(f_i, f_j)
-
-        # normalize loss
-        loss_ce /= args.n_domains_per_batch
-        loss_penalty /= args.n_domains_per_batch * (args.n_domains_per_batch - 1) / 2
+        for y_per_domain, labels_per_domain in zip(y_all.chunk(args.n_domains_per_batch, dim=0),
+                                                   labels_all.chunk(args.n_domains_per_batch, dim=0)):
+            # normalize loss by domain num
+            loss_penalty += criterion_irm(y_per_domain, labels_per_domain) / args.n_domains_per_batch
 
         if awl:
             loss = awl(loss_ce, loss_penalty)
         else:
             loss = loss_ce + loss_penalty * args.trade_off
+
+        cls_acc = utils.accuracy(y_all, labels_all)[0]
 
         losses.update(loss.item(), x_all.size(0))
         losses_ce.update(loss_ce.item(), x_all.size(0))
@@ -90,7 +89,6 @@ def train_one_epoch(model, train_iter, criterion_class, criterion_coral, optimiz
             progress.display(i)
     
     return losses.avg
-
 
 def evaluate(model, criterion, data_loader, device, print_freq=100, log_suffix=""):
     model.eval()
@@ -176,12 +174,12 @@ def main(args):
         num_channels = args.num_channels
     
     print("Creating model")
-    model = DGCoralModel(args.model, weights=args.weights, num_classes=num_classes, num_channels=num_channels)
+    model = resnet18(weights=args.weights, num_classes=num_classes, num_channels=num_channels)
 
     if args.pretrained_model:
         checkpoint = torch.load(args.pretrained_model, map_location="cpu")
         model.load_state_dict(checkpoint["model"])
-        model.model.conv1 = utils.copy_weghts(model.model.conv1, len(val_dataset.bands))
+        model.conv1 = utils.copy_weghts(model.conv1, len(val_dataset.bands))
     model.to(device)
 
     criterion_class = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
@@ -256,7 +254,7 @@ def main(args):
     else:
         lr_scheduler = main_lr_scheduler
 
-    correlation_alignment_loss = CorrelationAlignmentLoss().to(device)
+    invariance_penalty_loss = InvariancePenaltyLoss().to(device)
     
     best_kappa = 0.0
     epochs_without_improvement = 0
@@ -276,7 +274,7 @@ def main(args):
     
     start_time = time.time()
     for epoch in range(args.start_epoch, args.max_epochs):
-        train_loss = train_one_epoch(model, train_iter, criterion_class, correlation_alignment_loss, optimizer, device, epoch, awl, args)
+        train_loss = train_one_epoch(model, train_iter, criterion_class, invariance_penalty_loss, optimizer, device, epoch, awl, args)
         lr_scheduler.step()
         val_metric_logger = evaluate(model, criterion_class, data_loader_test, device=device)
 

@@ -19,6 +19,7 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, arg
     
     header = f"Epoch: [{epoch}]"
     for i, (image, target, domain) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
+        print(image.shape)
         start_time = time.time()
         image, target = image.to(device), target.to(device)
         output = model(image)
@@ -114,10 +115,7 @@ def main(args):
     )
     
     if args.pretrained_model:
-        if "swir" in args.band_groups:
-            num_channels = 9
-        else:
-            num_channels = 4
+        num_channels = args.num_channels
 
     print("Creating model")
     model = resnet18(weights=args.weights, num_classes=num_classes, num_channels=num_channels)
@@ -332,6 +330,7 @@ def get_args_parser(add_help=True):
     parser.add_argument("--band-groups", default=["rgb"], nargs='+', help="List of train folders")
     parser.add_argument("--pretrained-model", type=str, default=None, help="the path of the pretrained model")
     parser.add_argument("--seed", default=2342342, type=int, help="The seed value of random")
+    parser.add_argument('--num-channels', default=4, type=int, help='The number of channels for pretrained model')
 
     return parser
 

@@ -134,10 +134,7 @@ def main(args):
     train_iter = utils.ForeverDataIterator(data_loader)
 
     if args.pretrained_model:
-        if "swir" in args.band_groups:
-            num_channels = 9
-        else:
-            num_channels = 4
+        num_channels = args.num_channels
     
     print("Creating model")
     model = resnet18(num_classes=num_classes, num_channels=num_channels, mix_layers=args.mix_layers, mix_p=args.mix_p, mix_alpha=args.mix_alpha)
@@ -355,6 +352,7 @@ def get_args_parser(add_help=True):
     parser.add_argument('--mix-layers', nargs='+', help='layers to apply MixStyle')
     parser.add_argument('--mix-p', default=0.5, type=float, help='probability to apply MixStyle')
     parser.add_argument('--mix-alpha', default=0.1, type=float, help='parameter alpha for beta distribution')
+    parser.add_argument('--num-channels', default=4, type=int, help='The number of channels for pretrained model')
 
     return parser
 

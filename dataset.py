@@ -240,6 +240,13 @@ def get_bands_mean_std(band_groups):
             BAND_STATS["S2"]["std"]["B11"],
             BAND_STATS["S2"]["std"]["B12"],
         ])
+
+    if "rgb" not in band_groups and "swir" not in band_groups and "swir" not in band_groups:
+        for band_group in band_groups:
+            bands.append(band_group.upper())
+            mean.append(BAND_STATS["S2"]["mean"][band_group.upper()])
+            std.append(BAND_STATS["S2"]["std"][band_group.upper()])
+
     return bands, mean, std
 
 def load_train_val_data_for_coral(
