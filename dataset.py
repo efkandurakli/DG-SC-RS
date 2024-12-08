@@ -8,7 +8,6 @@ import numpy as np
 import cv2
 import torch
 import presets
-from osgeo import gdal
 from torch.utils.data import Dataset as PytorchDataset
 from constants import *
 from torchvision.transforms.functional import InterpolationMode
