@@ -53,7 +53,7 @@ data/
 ├── bigearthnet/
     ├── train/
     │   ├── images/
-    │   └── şabels/
+    │   └── labels/
     ├── val/
     │   ├── images/
     │   └── labels/
