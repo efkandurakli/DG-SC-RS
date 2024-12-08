@@ -76,8 +76,9 @@ data/
 ```
 ./train.sh
 ```
+### Inference
 
-### Evaluate All Models
+#### Evaluate All Models
 ```
 ./test.sh
 ```
