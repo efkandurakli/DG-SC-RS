@@ -89,25 +89,7 @@ data/
 
 ### Table: Scene classification performances across the target domains in terms of kappa score and overall accuracy for all the tested setups. Best results are in bold. For more detailed results, please refer to the full paper.
 
-|            | RGB                   | RGB      | RGB+NIR                   | RGB+NIR  | RGB+NIR+SWIR          | RGB+NIR+SWIR |
-|------------|-----------------------|----------|---------------------------|----------|-----------------------|--------------|
-|            |                       |          |                           |  **LB**  |                       |              |
-| **Setup**  | $\boldsymbol{\kappa}$ | **Acc.** | $\boldsymbol{\kappa}$     | **Acc.** | $\boldsymbol{\kappa}$ | **Acc.**     |
-| LB         | 0.636                 | 75.31    | 0.638                     | 75.18    | **0.700**             | **79.75**    |
-| LB+WT      | -                     | -        | 0.701                     | 79.69    | **0.716**             | **80.79**    |
-|            |                       |          |                           |  **UB**  |                       |              |
-| UB         | 0.904                 | 93.56    | 0.911                     | 94.07    | 0.938                 | 95.91        |
-| UB+WT      | -                     | -        | 0.937                     | 95.78    | **0.945**             | **96.35**    |
-|            |                       |          |                           |  **DG**  |                       |              |
-| ADV        | 0.652                 | 76.39    | 0.653                     | 76.70    | **0.672**             | **77.86**    |
-| ADV+WT     | -                     | -        | 0.717                     | 80.83    | **0.758**             | **83.56**    |
-| CRL        | 0.663                 | 77.23    | 0.687                     | 78.75    | **0.718**             | **80.85**    |
-| CRL+WT     | -                     | -        | 0.724                     | 81.24    | **0.738**             | **82.22**    |
-| IRM        | 0.630                 | 75.15    | 0.625                     | 74.74    | **0.699**             | **79.57**    |
-| IRM+WT     | -                     | -        | 0.627                     | 74.80    | **0.704**             | **80.08**    |
-| MIX        | 0.655                 | 76.88    | 0.679                     | 78.53    | **0.697**             | **79.65**    |
-| MIX+WT     | -                     | -        | 0.807                     | 87.02    | **0.836**             | **88.92**    |
-
+![Results](/images/results.png)
 
 ## Citation
 ```
