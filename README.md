@@ -1,6 +1,7 @@
 # BAND AWARE DOMAIN GENERALIZATION FOR CROSS-COUNTRY MULTISPECTRAL REMOTE SENSING SCENE CLASSIFICATION
 This repository contains the code for the paper titled "BAND AWARE DOMAIN GENERALIZATION FOR CROSS-COUNTRY MULTISPECTRAL REMOTE SENSING SCENE CLASSIFICATION" accepted for WHISPERS 2024.
 
+[📄 Paper (WHISPERS 2024)](https://drive.google.com/file/d/1a6brgiiAcjsOqDEPwXQ4skIHFmOvXZxW/view?usp=sharing)\
 [📄 Poster Presentation (WHISPERS 2024)](https://drive.google.com/file/d/1smTxD6jWeBtHzfGdHrxgrp6ZHm4duMvN/view?usp=sharing)
 
 ## Table of Contents
