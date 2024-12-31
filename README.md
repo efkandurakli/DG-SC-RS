@@ -41,7 +41,7 @@ This repository contains the code for the paper titled "BAND AWARE DOMAIN GENERA
    
 2. Create a conda virtual environment using `environment.yml` under the root folder and activate it
    ```
-   conda env export --no-builds > environment.yml
+   conda env create -f environment.yml
    conda activate dgscrs
    ```
 
